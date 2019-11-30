@@ -327,7 +327,7 @@ type Client struct {
 	loggerInit sync.Once
 }
 
-// NewClient creates a new Client with default settings.
+// NewClient creates a new Client with default settings and applying the custom configurations.
 func NewClient(options ...Option) *Client {
 	client := &Client{
 		HTTPClient:   cleanhttp.DefaultPooledClient(),
