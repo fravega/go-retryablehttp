@@ -408,6 +408,13 @@ func SetBackoffPolicy(backoff Backoff) Option {
 	})
 }
 
+// SetErrorHandler is used to set the error handler
+func SetErrorHandler(errorHandler ErrorHandler) Option {
+	return OptionFunc(func(c *Client) {
+		c.ErrorHandler = errorHandler
+	})
+}
+
 func (c *Client) logger() interface{} {
 	c.loggerInit.Do(func() {
 		if c.Logger == nil {
