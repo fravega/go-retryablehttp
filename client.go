@@ -639,7 +639,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 			return resp, err
 		}
 
-		// We do this before drainBody beause there's no need for the I/O if
+		// We do this before drainBody because there's no need for the I/O if
 		// we're breaking out
 		remain := c.RetryMax - i
 		if remain <= 0 {
