@@ -431,9 +431,9 @@ type RetryableClient struct {
 	client *Client
 }
 
-// NewHTTPClient creates a new RetryableClient wrapping the Client with default settings
-func NewHTTPClient() *RetryableClient {
-	return &RetryableClient{client: NewClient()}
+// NewHTTPClient creates a new RetryableClient wrapping the Client with configurable settings
+func NewHTTPClient(options ...Option) *RetryableClient {
+	return &RetryableClient{client: NewClient(options...)}
 }
 
 func (c *RetryableClient) Do(req *http.Request) (*http.Response, error) {
@@ -443,12 +443,6 @@ func (c *RetryableClient) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return c.client.Do(retryableRequest)
-}
-
-// FromClient creates a RetryableClient from an existing Client. It should
-// be used when Client has custom settings and no constructor is used
-func FromClient(client *Client) *RetryableClient {
-	return &RetryableClient{client: client}
 }
 
 // DefaultRetryPolicy provides a default callback for Client.CheckRetry, which
