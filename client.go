@@ -367,7 +367,7 @@ func SetHTTPClient(httpClient *http.Client) Option {
 }
 
 // SetLogger is used to set the logger to use.
-func SetLogger(logger Logger) Option {
+func SetLogger(logger interface{}) Option {
 	return OptionFunc(func(c *Client) {
 		c.Logger = logger
 	})
