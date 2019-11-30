@@ -367,7 +367,7 @@ func SetHTTPClient(httpClient *http.Client) Option {
 }
 
 // SetLogger is used to set the logger to use.
-func SetLogger(logger Logger) Option {
+func SetLogger(logger interface{}) Option {
 	return OptionFunc(func(c *Client) {
 		c.Logger = logger
 	})
@@ -405,6 +405,13 @@ func SetCheckRetryPolicy(checkRetry CheckRetry) Option {
 func SetBackoffPolicy(backoff Backoff) Option {
 	return OptionFunc(func(c *Client) {
 		c.Backoff = backoff
+	})
+}
+
+// SetErrorHandler is used to set the error handler
+func SetErrorHandler(errorHandler ErrorHandler) Option {
+	return OptionFunc(func(c *Client) {
+		c.ErrorHandler = errorHandler
 	})
 }
 
