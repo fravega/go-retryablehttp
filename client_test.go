@@ -107,6 +107,45 @@ func (c *custReader) Read(p []byte) (n int, err error) {
 	return i, nil
 }
 
+func TestNewClient_SetHTTPClient(t *testing.T) {
+	httpClient := http.DefaultClient
+	client := NewClient(SetHTTPClient(httpClient))
+	if client.HTTPClient != httpClient {
+		t.Fatalf("Configured HTTP client is not ok")
+	}
+}
+
+func TestNewClient_SetLogger(t *testing.T) {
+	client := NewClient(SetLogger(nil))
+	if client.Logger != nil {
+		t.Fatalf("Configured logger is not ok")
+	}
+}
+
+func TestNewClient_SetRetryWaitMin(t *testing.T) {
+	retryWaitMin := defaultRetryWaitMin + 1
+	client := NewClient(SetRetryWaitMin(retryWaitMin))
+	if client.RetryWaitMin != retryWaitMin {
+		t.Fatalf("Configured min retry wait is not ok")
+	}
+}
+
+func TestNewClient_SetRetryWaitMax(t *testing.T) {
+	retryWaitMax := defaultRetryWaitMax + 1
+	client := NewClient(SetRetryWaitMax(retryWaitMax))
+	if client.RetryWaitMax != retryWaitMax {
+		t.Fatalf("Configured max retry wait is not ok")
+	}
+}
+
+func TestNewClient_SetRetryMax(t *testing.T) {
+	retryMax := defaultRetryMax + 1
+	client := NewClient(SetRetryMax(retryMax))
+	if client.RetryMax != retryMax {
+		t.Fatalf("Configured max number of retries is not ok")
+	}
+}
+
 func TestClient_Do(t *testing.T) {
 	testBytes := []byte("hello")
 	// Native func
