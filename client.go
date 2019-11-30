@@ -426,6 +426,25 @@ func (c *Client) logger() interface{} {
 	return c.Logger
 }
 
+// RetryableClient wraps the Client so it can be backward compatible with the http.Client basic signature
+type RetryableClient struct {
+	client *Client
+}
+
+// NewHTTPClient creates a new RetryableClient wrapping the Client with configurable settings
+func NewHTTPClient(options ...Option) *RetryableClient {
+	return &RetryableClient{client: NewClient(options...)}
+}
+
+func (c *RetryableClient) Do(req *http.Request) (*http.Response, error) {
+	retryableRequest, err := FromRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.client.Do(retryableRequest)
+}
+
 // DefaultRetryPolicy provides a default callback for Client.CheckRetry, which
 // will retry on connection errors and server errors.
 func DefaultRetryPolicy(ctx context.Context, resp *http.Response, err error) (bool, error) {
