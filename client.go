@@ -327,9 +327,9 @@ type Client struct {
 	loggerInit sync.Once
 }
 
-// NewClient creates a new Client with default settings.
-func NewClient() *Client {
-	return &Client{
+// NewClient creates a new Client with default settings and applying the custom configurations.
+func NewClient(options ...Option) *Client {
+	client := &Client{
 		HTTPClient:   cleanhttp.DefaultPooledClient(),
 		Logger:       defaultLogger,
 		RetryWaitMin: defaultRetryWaitMin,
@@ -338,6 +338,74 @@ func NewClient() *Client {
 		CheckRetry:   DefaultRetryPolicy,
 		Backoff:      DefaultBackoff,
 	}
+
+	for _, option := range options {
+		option.Apply(client)
+	}
+
+	return client
+}
+
+// Options configures a Client
+type Option interface {
+	Apply(*Client)
+}
+
+// OptionFunc is a function that configures a Client
+type OptionFunc func(*Client)
+
+// Apply calls f(client)
+func (f OptionFunc) Apply(client *Client) {
+	f(client)
+}
+
+// SetHTTPClient is used to set the underlying httpClient
+func SetHTTPClient(httpClient *http.Client) Option {
+	return OptionFunc(func(c *Client) {
+		c.HTTPClient = httpClient
+	})
+}
+
+// SetLogger is used to set the logger to use.
+func SetLogger(logger Logger) Option {
+	return OptionFunc(func(c *Client) {
+		c.Logger = logger
+	})
+}
+
+// SetRetryWaitMin is used to set the min retry wait
+func SetRetryWaitMin(retryWaitMin time.Duration) Option {
+	return OptionFunc(func(c *Client) {
+		c.RetryWaitMin = retryWaitMin
+	})
+}
+
+// SetRetryWaitMax is used to set the max retry wait
+func SetRetryWaitMax(retryWaitMax time.Duration) Option {
+	return OptionFunc(func(c *Client) {
+		c.RetryWaitMax = retryWaitMax
+	})
+}
+
+// SetRetryMax is used to set the max number of retries
+func SetRetryMax(retryMax int) Option {
+	return OptionFunc(func(c *Client) {
+		c.RetryMax = retryMax
+	})
+}
+
+// SetCheckRetryPolicy is used to set the retry policy
+func SetCheckRetryPolicy(checkRetry CheckRetry) Option {
+	return OptionFunc(func(c *Client) {
+		c.CheckRetry = checkRetry
+	})
+}
+
+// SetBackoffPolicy is used to set the backoff policy
+func SetBackoffPolicy(backoff Backoff) Option {
+	return OptionFunc(func(c *Client) {
+		c.Backoff = backoff
+	})
 }
 
 func (c *Client) logger() interface{} {
