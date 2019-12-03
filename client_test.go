@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/fravega/go-logger/v2"
+	"github.com/fravega/go-tracing"
+	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"net"
@@ -15,8 +19,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/hashicorp/go-hclog"
 )
 
 func TestRequest(t *testing.T) {
@@ -184,10 +186,10 @@ func testClient_Do(t *testing.T, body interface{}) {
 	client.RetryWaitMin = 10 * time.Millisecond
 	client.RetryWaitMax = 50 * time.Millisecond
 	client.RetryMax = 50
-	client.RequestLogHook = func(logger Logger, req *http.Request, retryNumber int) {
+	client.RequestLogHook = func(logger logger.Logger, req *http.Request, retryNumber int) {
 		retryCount = retryNumber
 
-		if logger != client.Logger {
+		if logger == nil {
 			t.Fatalf("Client logger was not passed to logging hook")
 		}
 
@@ -335,14 +337,11 @@ func TestClient_Get(t *testing.T) {
 
 func TestClient_RequestLogHook(t *testing.T) {
 	t.Run("RequestLogHook successfully called with default Logger", func(t *testing.T) {
-		testClient_RequestLogHook(t, defaultLogger)
-	})
-	t.Run("RequestLogHook successfully called with nil Logger", func(t *testing.T) {
-		testClient_RequestLogHook(t, nil)
+		testClient_RequestLogHook(t, logger.GetDefaultLogger())
 	})
 }
 
-func testClient_RequestLogHook(t *testing.T, logger interface{}) {
+func testClient_RequestLogHook(t *testing.T, l logger.Logger) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Fatalf("bad method: %s", r.Method)
@@ -358,11 +357,11 @@ func testClient_RequestLogHook(t *testing.T, logger interface{}) {
 	testURIPath := "/foo/bar"
 
 	client := NewClient()
-	client.Logger = logger
-	client.RequestLogHook = func(logger Logger, req *http.Request, retry int) {
+	client.Logger = l
+	client.RequestLogHook = func(logger logger.Logger, req *http.Request, retry int) {
 		retries = retry
 
-		if logger != client.Logger {
+		if logger == nil {
 			t.Fatalf("Client logger was not passed to logging hook")
 		}
 
@@ -390,20 +389,18 @@ func testClient_RequestLogHook(t *testing.T, logger interface{}) {
 }
 
 func TestClient_ResponseLogHook(t *testing.T) {
-	t.Run("ResponseLogHook successfully called with hclog Logger", func(t *testing.T) {
-		buf := new(bytes.Buffer)
-		l := hclog.New(&hclog.LoggerOptions{
-			Output: buf,
-		})
-		testClient_ResponseLogHook(t, l, buf)
-	})
-	t.Run("ResponseLogHook successfully called with nil Logger", func(t *testing.T) {
-		buf := new(bytes.Buffer)
-		testClient_ResponseLogHook(t, nil, buf)
+	t.Run("ResponseLogHook successfully called", func(t *testing.T) {
+		testClient_ResponseLogHook(t, logger.New(&logger.Config{
+			LogLevel:        "DEBUG",
+			LogFormat:       "plain",
+		}))
 	})
 }
 
-func testClient_ResponseLogHook(t *testing.T, l interface{}, buf *bytes.Buffer) {
+func testClient_ResponseLogHook(t *testing.T, l logger.Logger) {
+	var buf bytes.Buffer
+	logrus.SetOutput(&buf)
+
 	passAfter := time.Now().Add(100 * time.Millisecond)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if time.Now().After(passAfter) {
@@ -417,17 +414,16 @@ func testClient_ResponseLogHook(t *testing.T, l interface{}, buf *bytes.Buffer) 
 	defer ts.Close()
 
 	client := NewClient()
-
 	client.Logger = l
 	client.RetryWaitMin = 10 * time.Millisecond
 	client.RetryWaitMax = 10 * time.Millisecond
 	client.RetryMax = 15
-	client.ResponseLogHook = func(logger Logger, resp *http.Response) {
+	client.ResponseLogHook = func(logger logger.Logger, resp *http.Response) {
 		if resp.StatusCode == 200 {
 			successLog := "test_log_pass"
 			// Log something when we get a 200
 			if logger != nil {
-				logger.Printf(successLog)
+				logger.Debug(successLog)
 			} else {
 				buf.WriteString(successLog)
 			}
@@ -439,7 +435,7 @@ func testClient_ResponseLogHook(t *testing.T, l interface{}, buf *bytes.Buffer) 
 			}
 			failLog := string(body)
 			if logger != nil {
-				logger.Printf(failLog)
+				logger.Debug(failLog)
 			} else {
 				buf.WriteString(failLog)
 			}
@@ -478,13 +474,16 @@ func TestClient_RequestWithContext(t *testing.T) {
 		w.Write([]byte("test_200_body"))
 	}))
 	defer ts.Close()
+	var buf bytes.Buffer
+	logrus.SetOutput(&buf)
 
 	req, err := NewRequest(http.MethodGet, ts.URL, nil)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	ctx, cancel := context.WithCancel(req.Request.Context())
-	req = req.WithContext(ctx)
+	traceId := uuid.New().String()
+	req = req.WithContext(tracing.SetId(ctx, traceId))
 
 	client := NewClient()
 
@@ -503,6 +502,10 @@ func TestClient_RequestWithContext(t *testing.T) {
 
 	if err != context.Canceled {
 		t.Fatalf("Expected context.Canceled err, got: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), traceId) {
+		t.Fatalf("Expected traceId %s to be contained in logs", traceId)
 	}
 }
 
