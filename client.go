@@ -29,12 +29,10 @@ import (
 	"github.com/fravega/go-logger/v2"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -49,7 +47,7 @@ var (
 	defaultRetryMax     = 4
 
 	// defaultLogger is the logger provided with defaultClient
-	defaultLogger = log.New(os.Stderr, "", log.LstdFlags)
+	defaultLogger = logger.GetDefaultLogger()
 
 	// defaultClient is used for performing requests without explicitly making
 	// a new client. It is purposely private to avoid modifications.
@@ -305,7 +303,7 @@ type Client struct {
 func NewClient(options ...Option) *Client {
 	client := &Client{
 		HTTPClient:   cleanhttp.DefaultPooledClient(),
-		Logger:       logger.GetDefaultLogger(),
+		Logger:       defaultLogger,
 		RetryWaitMin: defaultRetryWaitMin,
 		RetryWaitMax: defaultRetryWaitMax,
 		RetryMax:     defaultRetryMax,

@@ -337,7 +337,7 @@ func TestClient_Get(t *testing.T) {
 
 func TestClient_RequestLogHook(t *testing.T) {
 	t.Run("RequestLogHook successfully called with default Logger", func(t *testing.T) {
-		testClient_RequestLogHook(t, logger.GetDefaultLogger())
+		testClient_RequestLogHook(t, defaultLogger)
 	})
 }
 
