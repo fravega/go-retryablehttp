@@ -26,17 +26,15 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"github.com/fravega/go-logger/v2"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/go-cleanhttp"
@@ -49,7 +47,7 @@ var (
 	defaultRetryMax     = 4
 
 	// defaultLogger is the logger provided with defaultClient
-	defaultLogger = log.New(os.Stderr, "", log.LstdFlags)
+	defaultLogger = logger.GetDefaultLogger()
 
 	// defaultClient is used for performing requests without explicitly making
 	// a new client. It is purposely private to avoid modifications.
@@ -238,42 +236,18 @@ func NewRequest(method, url string, rawBody interface{}) (*Request, error) {
 	return &Request{bodyReader, httpReq}, nil
 }
 
-// Logger interface allows to use other loggers than
-// standard log.Logger.
-type Logger interface {
-	Printf(string, ...interface{})
-}
-
-// LeveledLogger interface implements the basic methods that a logger library needs
-type LeveledLogger interface {
-	Error(string, ...interface{})
-	Info(string, ...interface{})
-	Debug(string, ...interface{})
-	Warn(string, ...interface{})
-}
-
-// hookLogger adapts an LeveledLogger to Logger for use by the existing hook functions
-// without changing the API.
-type hookLogger struct {
-	LeveledLogger
-}
-
-func (h hookLogger) Printf(s string, args ...interface{}) {
-	h.Info(fmt.Sprintf(s, args...))
-}
-
 // RequestLogHook allows a function to run before each retry. The HTTP
 // request which will be made, and the retry number (0 for the initial
 // request) are available to users. The internal logger is exposed to
 // consumers.
-type RequestLogHook func(Logger, *http.Request, int)
+type RequestLogHook func(logger.Logger, *http.Request, int)
 
 // ResponseLogHook is like RequestLogHook, but allows running a function
 // on each HTTP response. This function will be invoked at the end of
 // every HTTP request executed, regardless of whether a subsequent retry
 // needs to be performed or not. If the response body is read or closed
 // from this method, this will affect the response returned from Do().
-type ResponseLogHook func(Logger, *http.Response)
+type ResponseLogHook func(logger.Logger, *http.Response)
 
 // CheckRetry specifies a policy for handling retries. It is called
 // following each request with the response and error values returned by
@@ -300,7 +274,7 @@ type ErrorHandler func(resp *http.Response, err error, numTries int) (*http.Resp
 // like automatic retries to tolerate minor outages.
 type Client struct {
 	HTTPClient *http.Client // Internal HTTP client.
-	Logger     interface{}  // Customer logger instance. Can be either Logger or LeveledLogger
+	Logger     logger.Logger  // FVG custom logger
 
 	RetryWaitMin time.Duration // Minimum time to wait
 	RetryWaitMax time.Duration // Maximum time to wait
@@ -323,8 +297,6 @@ type Client struct {
 
 	// ErrorHandler specifies the custom error handler to use, if any
 	ErrorHandler ErrorHandler
-
-	loggerInit sync.Once
 }
 
 // NewClient creates a new Client with default settings and applying the custom configurations.
@@ -367,7 +339,7 @@ func SetHTTPClient(httpClient *http.Client) Option {
 }
 
 // SetLogger is used to set the logger to use.
-func SetLogger(logger interface{}) Option {
+func SetLogger(logger logger.Logger) Option {
 	return OptionFunc(func(c *Client) {
 		c.Logger = logger
 	})
@@ -413,24 +385,6 @@ func SetErrorHandler(errorHandler ErrorHandler) Option {
 	return OptionFunc(func(c *Client) {
 		c.ErrorHandler = errorHandler
 	})
-}
-
-func (c *Client) logger() interface{} {
-	c.loggerInit.Do(func() {
-		if c.Logger == nil {
-			return
-		}
-
-		switch c.Logger.(type) {
-		case Logger, LeveledLogger:
-			// ok
-		default:
-			// This should happen in dev when they are setting Logger and work on code, not in prod.
-			panic(fmt.Sprintf("invalid logger type passed, must be Logger or LeveledLogger, was %T", c.Logger))
-		}
-	})
-
-	return c.Logger
 }
 
 // RetryableClient wraps the Client so it can be backward compatible with the http.Client basic signature
@@ -556,21 +510,14 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		c.HTTPClient = cleanhttp.DefaultPooledClient()
 	}
 
-	logger := c.logger()
-
-	if logger != nil {
-		switch v := logger.(type) {
-		case Logger:
-			v.Printf("[DEBUG] %s %s", req.Method, req.URL)
-		case LeveledLogger:
-			v.Debug("performing request", "method", req.Method, "url", req.URL)
-		}
-	}
+	baseLogger := c.Logger.From(req.Context()).WithFields(logger.Fields{"url": fmt.Sprintf("%s %s", strings.ToUpper(req.Method), req.URL)})
+	baseLogger.Debugf("starting retryable request")
 
 	var resp *http.Response
 	var err error
 
 	for i := 0; ; i++ {
+		reqLogger := baseLogger.WithFields(logger.Fields{"iteration": i+1})
 		var code int // HTTP response code
 
 		// Always rewind the request body when non-nil.
@@ -588,14 +535,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		}
 
 		if c.RequestLogHook != nil {
-			switch v := logger.(type) {
-			case Logger:
-				c.RequestLogHook(v, req.Request, i)
-			case LeveledLogger:
-				c.RequestLogHook(hookLogger{v}, req.Request, i)
-			default:
-				c.RequestLogHook(nil, req.Request, i)
-			}
+			c.RequestLogHook(reqLogger, req.Request, i)
 		}
 
 		// Attempt the request
@@ -604,29 +544,18 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 			code = resp.StatusCode
 		}
 
+		resLogger := reqLogger.WithFields(logger.Fields{"statusCode": code})
+
 		// Check if we should continue with retries.
 		checkOK, checkErr := c.CheckRetry(req.Context(), resp, err)
 
 		if err != nil {
-			switch v := logger.(type) {
-			case Logger:
-				v.Printf("[ERR] %s %s request failed: %v", req.Method, req.URL, err)
-			case LeveledLogger:
-				v.Error("request failed", "error", err, "method", req.Method, "url", req.URL)
-			}
+			resLogger.WithFields(logger.Fields{"error": err}).Error("request failed")
 		} else {
 			// Call this here to maintain the behavior of logging all requests,
 			// even if CheckRetry signals to stop.
 			if c.ResponseLogHook != nil {
-				// Call the response logger function if provided.
-				switch v := logger.(type) {
-				case Logger:
-					c.ResponseLogHook(v, resp)
-				case LeveledLogger:
-					c.ResponseLogHook(hookLogger{v}, resp)
-				default:
-					c.ResponseLogHook(nil, resp)
-				}
+				c.ResponseLogHook(resLogger, resp)
 			}
 		}
 
@@ -635,6 +564,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 			if checkErr != nil {
 				err = checkErr
 			}
+			resLogger.Debug("retryable request finished")
 			c.HTTPClient.CloseIdleConnections()
 			return resp, err
 		}
@@ -656,14 +586,8 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		if code > 0 {
 			desc = fmt.Sprintf("%s (status: %d)", desc, code)
 		}
-		if logger != nil {
-			switch v := logger.(type) {
-			case Logger:
-				v.Printf("[DEBUG] %s: retrying in %s (%d left)", desc, wait, remain)
-			case LeveledLogger:
-				v.Debug("retrying request", "request", desc, "timeout", wait, "remaining", remain)
-			}
-		}
+		reqLogger.Debugf("retrying request in %s (%d retries left)", wait, remain)
+
 		select {
 		case <-req.Context().Done():
 			c.HTTPClient.CloseIdleConnections()
@@ -692,14 +616,7 @@ func (c *Client) drainBody(body io.ReadCloser) {
 	defer body.Close()
 	_, err := io.Copy(ioutil.Discard, io.LimitReader(body, respReadLimit))
 	if err != nil {
-		if c.logger() != nil {
-			switch v := c.logger().(type) {
-			case Logger:
-				v.Printf("[ERR] error reading response body: %v", err)
-			case LeveledLogger:
-				v.Error("error reading response body", "error", err)
-			}
-		}
+		c.Logger.WithFields(logger.Fields{"error": err}).Error("error reading response body")
 	}
 }
 
