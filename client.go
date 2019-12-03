@@ -586,7 +586,7 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		if code > 0 {
 			desc = fmt.Sprintf("%s (status: %d)", desc, code)
 		}
-		reqLogger.Debugf("retrying request int %s (%d retries left)", wait, remain)
+		reqLogger.Debugf("retrying request in %s (%d retries left)", wait, remain)
 
 		select {
 		case <-req.Context().Done():
