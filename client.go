@@ -578,7 +578,14 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 
 		// We're going to retry, consume any response to reuse the connection.
 		if err == nil && resp != nil {
-			c.drainBody(resp.Body)
+			res, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				resLogger.WithFields(logger.Fields{"error": err}).Error("error reading response body")
+			} else {
+				resLogger.Errorf("got an unsuccessful response: %s", string(res))
+			}
+
+			resp.Body.Close()
 		}
 
 		wait := c.Backoff(c.RetryWaitMin, c.RetryWaitMax, i, resp)
@@ -591,7 +598,9 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 		select {
 		case <-req.Context().Done():
 			c.HTTPClient.CloseIdleConnections()
-			return nil, req.Context().Err()
+			err := req.Context().Err()
+			reqLogger.WithFields(logger.Fields{"error": err}).Error("context cancelled")
+			return nil, err
 		case <-time.After(wait):
 		}
 	}
@@ -609,15 +618,6 @@ func (c *Client) Do(req *Request) (*http.Response, error) {
 	c.HTTPClient.CloseIdleConnections()
 	return nil, fmt.Errorf("%s %s giving up after %d attempts",
 		req.Method, req.URL, c.RetryMax+1)
-}
-
-// Try to read the response body so we can reuse this connection.
-func (c *Client) drainBody(body io.ReadCloser) {
-	defer body.Close()
-	_, err := io.Copy(ioutil.Discard, io.LimitReader(body, respReadLimit))
-	if err != nil {
-		c.Logger.WithFields(logger.Fields{"error": err}).Error("error reading response body")
-	}
 }
 
 // Get is a shortcut for doing a GET request without making a new client.
