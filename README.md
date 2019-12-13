@@ -1,6 +1,7 @@
 go-retryablehttp
 ================
 
+![](https://github.com/fravega/go-retryablehttp/workflows/Go/badge.svg)
 [![Build Status](http://img.shields.io/travis/hashicorp/go-retryablehttp.svg?style=flat-square)][travis]
 [![Go Documentation](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)][godocs]
 
